@@ -1,0 +1,7 @@
+# Design decisions
+
+1. **Indexes.** Employees have a unique `emp_code` index for the business key, `(department, emp_code)` for sorted department lists, and `(department, joined_on)` for trend headcount. Attendance logs have a unique `(emp_code, date)` index for one record per employee-day, plus `(date, emp_code)` indexes for list and date-range analytics. I considered an index on `status`, but rejected it because status is low-cardinality and the required list sort is date-first.
+2. **Punch-in race.** Both requests calculate the same attendance date and attempt an insert. MongoDB's unique `(emp_code, date)` index accepts exactly one insert; the other raises `DuplicateKeyError`, which the endpoint converts to 409. There is no check-then-insert race.
+3. **Ties.** The leaderboard uses `$rank` after sorting by total late minutes and employee code. Tied totals share a rank, and `limit` is applied to the rank, so all employees tied at the cutoff rank are returned.
+4. **Headcount.** The department summary starts from employees, filters `joined_on` through the month end, and uses `$lookup` with `preserveNullAndEmptyArrays`. Therefore an employee with no attendance logs still contributes to the department's employee set and headcount.
+5. **At 100x scale.** I would pre-aggregate daily/monthly facts asynchronously and query those read models for analytics, while keeping the raw attendance collection for auditability. This would reduce repeated joins and window calculations over the full log volume.
